@@ -8,7 +8,6 @@ struct Player
     std::string name;
     int ID = -1;
     ENetPeer *peer;
-    uint32_t lastPing;
 };
 
 int main(int argc, const char **argv)
@@ -38,7 +37,8 @@ int main(int argc, const char **argv)
     return 1;
   }
 
-  printf("Game server started.\n");  
+  printf("Game server started.\n"); 
+  uint32_t lastPing = enet_time_get();
 
   while (true)
   {
@@ -50,7 +50,7 @@ int main(int argc, const char **argv)
       case ENET_EVENT_TYPE_CONNECT:
       {
         printf("Connection with %x:%u established\n", event.peer->address.host, event.peer->address.port);
-        connectedPlayers.emplace_back(names[IDcounter % maxPlayerCount], IDcounter, event.peer, enet_time_get());
+        connectedPlayers.emplace_back(names[IDcounter % maxPlayerCount], IDcounter, event.peer);
 
         std::string newPlayerInfo = "Current player info. ID:" + std::to_string(IDcounter) + ". Name:" + names[IDcounter % maxPlayerCount];
         printf("Send information '%s' about player to this player\n\t(through peer with pointer '%p')\n", newPlayerInfo.c_str(), connectedPlayers[IDcounter].peer);
@@ -59,7 +59,7 @@ int main(int argc, const char **argv)
 
         printf("Send information about new player to players.\n");
         newPlayerInfo = "New player info. ID:" + std::to_string(IDcounter) + ". Name:" + names[IDcounter % maxPlayerCount];
-        ENetPacket *newPacket = enet_packet_create(newPlayerInfo.c_str(), newPlayerInfo.size(), ENET_PACKET_FLAG_RELIABLE);
+        newPacket = enet_packet_create(newPlayerInfo.c_str(), newPlayerInfo.size() + 1, ENET_PACKET_FLAG_RELIABLE);
         enet_host_broadcast(server, 0, newPacket);
 
         std::string oldPlayerInfo;
@@ -78,13 +78,31 @@ int main(int argc, const char **argv)
         break;
       }
       case ENET_EVENT_TYPE_RECEIVE:
+        //if (strncmp((const char *) event.packet->data, "Position info.", 14) != 0)
+        //{
         printf("Packet received '%s'\n", event.packet->data);
+        //}
         enet_packet_destroy(event.packet);
+        // I don't see task to show positions of all players, so I don't work with recieved position
         break;
       default:
         break;
       };
       
+    }
+
+    std::string pingInfo;
+    ENetPacket *packet;
+    if (enet_time_get() - lastPing >= 500)
+    {
+      printf("Send ping info about all users. (unreliable.)\n");
+      for (int i = 0; i < connectedPlayers.size(); ++i)
+      {
+        pingInfo = std::string("Ping info. ID:") + std::to_string(connectedPlayers[i].ID) + std::string(". Rtt:") + std::to_string(connectedPlayers[i].peer->roundTripTime);
+        packet = enet_packet_create(pingInfo.c_str(), pingInfo.size() + 1, ENET_PACKET_FLAG_UNSEQUENCED);
+        enet_host_broadcast(server, 1, packet);
+      }
+      lastPing = enet_time_get();
     }
   }
 

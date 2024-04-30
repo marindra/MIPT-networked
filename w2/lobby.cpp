@@ -3,7 +3,7 @@
 
 int main(int argc, const char **argv)
 {
-  printf("Version 1.06\n");
+  printf("Version 1.07\n");
 
   const int maxPlayerCount = 32;
   bool gameStarted = false;

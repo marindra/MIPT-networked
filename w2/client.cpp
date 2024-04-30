@@ -62,11 +62,10 @@ int main(int argc, const char **argv)
 
   uint32_t timeStart = enet_time_get();
   uint32_t lastStartSendTime = timeStart;
-  uint32_t lastMicroSendTime = timeStart;
+  uint32_t lastPingSendTime = timeStart;
   bool connectedToLobby = false;
   bool connectedToGame = false;
   bool gameStarted = false;
-  bool connected = false;
   float posx = 0.f;
   float posy = 0.f;
   int ID = -1;
@@ -150,11 +149,13 @@ int main(int argc, const char **argv)
             name = nameField;
             ID = IDfield;
             players[ID] = name;
+            rttOfPlayers[ID] = 0;
           }
           else if (strncmp((const char *) event.packet->data, "New", 3) == 0)
           {
             printf("Saved name '%s' of player with ID %d\n", nameField.c_str(), IDfield);
             players[IDfield] = nameField;
+            rttOfPlayers[IDfield] = 0; // for case when we don't have rtt yet
           }
           else if (strncmp((const char *) event.packet->data, "Old", 3) == 0)
           {
@@ -163,6 +164,7 @@ int main(int argc, const char **argv)
             {
               printf("Saved name '%s' of player with ID %d\n", nameField.c_str(), IDfield);
               players[IDfield] = nameField;
+              rttOfPlayers[IDfield] = 0; // for case when we don't have rtt yet
             }
             else
             {
@@ -170,6 +172,7 @@ int main(int argc, const char **argv)
               {
                 printf("Something happen.\nI remember name '%s', but get other version ('%s'). Saved NEW name of player with ID %d\n", iter->second.c_str(), nameField.c_str(), IDfield);
                iter->second = nameField;
+               rttOfPlayers[iter->first] = 0; // something broken so we do something like restart
               }
             }
           }
@@ -177,6 +180,25 @@ int main(int argc, const char **argv)
           {
             printf("Wrong player info structure. I don\'t know how to parse it.\n");
           }
+        } else if (strncmp((const char *) event.packet->data, "Ping info.", 10) == 0)
+        {
+          size_t pos = recievedMessage.find("ID:");
+          if (pos == std::string::npos)
+          {
+            printf("Wrong structure of ping info. ID field is missing.\n");
+            enet_packet_destroy(event.packet);
+            break;
+          }
+
+          size_t posOfRtt = recievedMessage.find("Rtt:");
+          if (posOfRtt == std::string::npos)
+          {
+            printf("Wrong structure of ping info. Round trip time field is missing.\n");
+            enet_packet_destroy(event.packet);
+            break;
+          }
+
+          rttOfPlayers[std::stoi(recievedMessage.substr(pos+3, posOfRtt - pos - 3))] = std::stoull(recievedMessage.substr(posOfRtt + 4));
         }
 
         enet_packet_destroy(event.packet);
@@ -185,18 +207,6 @@ int main(int argc, const char **argv)
       default:
         break;
       };
-    }
-    if (connectedToGame)
-    {
-      //std::string message = std::string("Position info. ID:") + 
-      //send_unsequenced(gamePeer, message.c_str());
-    }
-    if (connectedToLobby && !connectedToGame && IsKeyDown(KEY_ENTER) && enet_time_get() - lastStartSendTime >= 100)
-    {
-      // Cooldown time = 10 is too small so I set value=100
-      printf("Sending start message to lobby.\n");
-      send_reliable(lobbyPeer, "Game started.");
-      lastStartSendTime = enet_time_get();
     }
 
     bool left = IsKeyDown(KEY_LEFT);
@@ -207,6 +217,21 @@ int main(int argc, const char **argv)
     posx += ((left ? -1.f : 0.f) + (right ? 1.f : 0.f)) * dt * spd;
     posy += ((up ? -1.f : 0.f) + (down ? 1.f : 0.f)) * dt * spd;
 
+    if (connectedToGame && enet_time_get() - lastPingSendTime >= 100)
+    {
+      std::string message = std::string("Position info. ID:") + std::to_string(ID) + std::string(". X:") + std::to_string(posx) + std::string(". Y:") + std::to_string(posy);
+      printf("Send message '%s' (unsequenced)\n", message.c_str());
+      send_unsequenced(gamePeer, message.c_str());
+      lastPingSendTime = enet_time_get();
+    }
+    if (connectedToLobby && !connectedToGame && IsKeyDown(KEY_ENTER) && enet_time_get() - lastStartSendTime >= 100)
+    {
+      // Cooldown time = 10 is too small so I set value=100
+      printf("Sending start message to lobby.\n");
+      send_reliable(lobbyPeer, "Game started.");
+      lastStartSendTime = enet_time_get();
+    }
+
     BeginDrawing();
       ClearBackground(BLACK);
       DrawText(TextFormat("Current status: %s", status.c_str()), 20, 20, 20, WHITE);
@@ -215,7 +240,7 @@ int main(int argc, const char **argv)
       int counter = 80;
       for (const auto& elem : players)
       {
-        DrawText(TextFormat("%s", elem.second.c_str()), 20, counter, 20, WHITE);
+        DrawText(TextFormat("%s\t%d", elem.second.c_str(), rttOfPlayers[elem.first]), 20, counter, 20, WHITE);
         counter += 20;
       }
     EndDrawing();
