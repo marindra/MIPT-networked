@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <map>
+//#include <Windows.h>
 
 static std::vector<Entity> entities;
 static std::map<uint16_t, ENetPeer*> controlledMap;
@@ -142,7 +143,7 @@ int main(int argc, const char **argv)
           send_snapshot(peer, e.eid, e.x, e.y);
       }
     }
-    //usleep(400000);
+    // Sleep(400);
   }
 
   enet_host_destroy(server);
