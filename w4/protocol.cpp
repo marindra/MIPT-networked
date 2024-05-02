@@ -1,7 +1,7 @@
 #include "protocol.h"
 #include "bitstream.h"
-#include <cstring> // memcpy
 #include <assert.h>
+
 void send_join(ENetPeer *peer)
 {
   ENetPacket *packet = enet_packet_create(nullptr, sizeof(uint8_t), ENET_PACKET_FLAG_RELIABLE);
@@ -43,10 +43,10 @@ void send_set_controlled_entity(ENetPeer *peer, uint16_t eid)
   enet_peer_send(peer, 0, packet);
 }
 
-void send_entity_state(ENetPeer *peer, uint16_t eid, float x, float y)
+void send_entity_state(ENetPeer *peer, uint16_t eid, float x, float y, size_t diameter)
 {
   ENetPacket *packet = enet_packet_create(nullptr, sizeof(uint8_t) + sizeof(uint16_t) +
-                                                   2 * sizeof(float),
+                                                   2 * sizeof(float) + sizeof(size_t),
                                                    ENET_PACKET_FLAG_UNSEQUENCED);
   //uint8_t *ptr = packet->data;
   //*ptr = E_CLIENT_TO_SERVER_STATE; ptr += sizeof(uint8_t);
@@ -58,15 +58,16 @@ void send_entity_state(ENetPeer *peer, uint16_t eid, float x, float y)
   bs.write(eid);
   bs.write(x);
   bs.write(y);
+  bs.write(diameter);
   assert(bs.checkIsEnd());
 
   enet_peer_send(peer, 1, packet);
 }
 
-void send_snapshot(ENetPeer *peer, uint16_t eid, float x, float y)
+void send_snapshot(ENetPeer *peer, uint16_t eid, float x, float y, size_t diameter)
 {
   ENetPacket *packet = enet_packet_create(nullptr, sizeof(uint8_t) + sizeof(uint16_t) +
-                                                   2 * sizeof(float),
+                                                   2 * sizeof(float) + sizeof(size_t),
                                                    ENET_PACKET_FLAG_UNSEQUENCED);
   //uint8_t *ptr = packet->data;
   //*ptr = E_SERVER_TO_CLIENT_SNAPSHOT; ptr += sizeof(uint8_t);
@@ -78,6 +79,7 @@ void send_snapshot(ENetPeer *peer, uint16_t eid, float x, float y)
   bs.write(eid);
   bs.write(x);
   bs.write(y);
+  bs.write(diameter);
   assert(bs.checkIsEnd());
 
   enet_peer_send(peer, 1, packet);
@@ -110,7 +112,7 @@ void deserialize_set_controlled_entity(ENetPacket *packet, uint16_t &eid)
   assert(bs.checkIsEnd());
 }
 
-void deserialize_entity_state(ENetPacket *packet, uint16_t &eid, float &x, float &y)
+void deserialize_entity_state(ENetPacket *packet, uint16_t &eid, float &x, float &y, size_t& diameter)
 {
   //uint8_t *ptr = packet->data; ptr += sizeof(uint8_t);
   //eid = *(uint16_t*)(ptr); ptr += sizeof(uint16_t);
@@ -122,10 +124,11 @@ void deserialize_entity_state(ENetPacket *packet, uint16_t &eid, float &x, float
   bs.read(eid);
   bs.read(x);
   bs.read(y);
+  bs.read(diameter);
   assert(bs.checkIsEnd());
 }
 
-void deserialize_snapshot(ENetPacket *packet, uint16_t &eid, float &x, float &y)
+void deserialize_snapshot(ENetPacket *packet, uint16_t &eid, float &x, float &y, size_t& diameter)
 {
   //uint8_t *ptr = packet->data; ptr += sizeof(uint8_t);
   //eid = *(uint16_t*)(ptr); ptr += sizeof(uint16_t);
@@ -137,6 +140,7 @@ void deserialize_snapshot(ENetPacket *packet, uint16_t &eid, float &x, float &y)
   bs.read(eid);
   bs.read(x);
   bs.read(y);
+  bs.read(diameter);
   assert(bs.checkIsEnd());
 }
 

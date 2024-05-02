@@ -1,4 +1,5 @@
 #include <iostream> // to implement uint8_t
+//#include <cstring> // memcpy
 #include <assert.h>
 
 class Bitstream

@@ -30,14 +30,15 @@ void on_set_controlled_entity(ENetPacket *packet)
 void on_snapshot(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f;
-  deserialize_snapshot(packet, eid, x, y);
+  float x = 0.f; float y = 0.f; size_t diameter = 10;
+  deserialize_snapshot(packet, eid, x, y, diameter);
   // TODO: Direct adressing, of course!
   for (Entity &e : entities)
     if (e.eid == eid)
     {
       e.x = x;
       e.y = y;
+      e.sizeOfRect = diameter;
     }
 }
 
@@ -117,6 +118,7 @@ int main(int argc, const char **argv)
           on_snapshot(event.packet);
           break;
         };
+        enet_packet_destroy(event.packet);
         break;
       default:
         break;
@@ -137,17 +139,17 @@ int main(int argc, const char **argv)
           e.y += ((up ? -dt : 0.f) + (down ? +dt : 0.f)) * 100.f;
 
           // Send
-          send_entity_state(serverPeer, my_entity, e.x, e.y);
+          send_entity_state(serverPeer, my_entity, e.x, e.y, e.sizeOfRect);
         }
     }
 
 
     BeginDrawing();
-      ClearBackground(GRAY);
+      ClearBackground(Color{33, 33, 33, 255});
       BeginMode2D(camera);
         for (const Entity &e : entities)
         {
-          const Rectangle rect = {e.x, e.y, 10.f, 10.f};
+          const Rectangle rect = {e.x, e.y, (float)e.sizeOfRect, (float)e.sizeOfRect};
           DrawRectangleRec(rect, GetColor(e.color));
         }
 

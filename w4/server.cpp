@@ -13,13 +13,13 @@ static std::map<uint16_t, ENetPeer*> controlledMap;
 static uint16_t create_random_entity()
 {
   uint16_t newEid = entities.size();
-  uint32_t color = 0xff000000 +
+  uint32_t color = 0x44000000 * (1 + rand() % 4) +
                    0x00440000 * (1 + rand() % 4) +
                    0x00004400 * (1 + rand() % 4) +
-                   0x00000044 * (1 + rand() % 4);
-  float x = (rand() % 40 - 20) * 5.f;
-  float y = (rand() % 40 - 20) * 5.f;
-  Entity ent = {color, x, y, newEid, false, 0.f, 0.f};
+                   0x0000003f * (2 + rand() % 3);
+  float x = (rand() % 40 - 20) * 15.f;
+  float y = (rand() % 40 - 20) * 15.f;
+  Entity ent = {color, x, y, newEid, false, 0.f, 0.f, (size_t) (10  + rand() % 11)}; // start size is from 10 to 20
   entities.push_back(ent);
   return newEid;
 }
@@ -47,13 +47,14 @@ void on_join(ENetPacket *packet, ENetPeer *peer, ENetHost *host)
 void on_state(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f;
-  deserialize_entity_state(packet, eid, x, y);
+  float x = 0.f; float y = 0.f; size_t diameter = 10;
+  deserialize_entity_state(packet, eid, x, y, diameter);
   for (Entity &e : entities)
     if (e.eid == eid)
     {
       e.x = x;
       e.y = y;
+      e.sizeOfRect = diameter;
     }
 }
 
@@ -140,7 +141,7 @@ int main(int argc, const char **argv)
       {
         ENetPeer *peer = &server->peers[i];
         if (controlledMap[e.eid] != peer)
-          send_snapshot(peer, e.eid, e.x, e.y);
+          send_snapshot(peer, e.eid, e.x, e.y, e.sizeOfRect);
       }
     }
     // Sleep(400);
