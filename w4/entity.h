@@ -12,4 +12,5 @@ struct Entity
   float targetX = 0.f;
   float targetY = 0.f;
   size_t sizeOfRect = 10;
+  size_t score = 0;
 };

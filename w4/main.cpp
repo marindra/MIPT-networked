@@ -4,11 +4,13 @@
 #include <enet/enet.h>
 
 #include <vector>
+#include <map>
 #include "entity.h"
 #include "protocol.h"
 
 
 static std::vector<Entity> entities;
+std::map<uint16_t, unsigned int> scores;
 static uint16_t my_entity = invalid_entity;
 
 void on_new_entity_packet(ENetPacket *packet)
@@ -20,6 +22,7 @@ void on_new_entity_packet(ENetPacket *packet)
     if (e.eid == newEntity.eid)
       return; // don't need to do anything, we already have entity
   entities.push_back(newEntity);
+  scores[newEntity.eid] = 0;
 }
 
 void on_set_controlled_entity(ENetPacket *packet)
@@ -30,8 +33,8 @@ void on_set_controlled_entity(ENetPacket *packet)
 void on_snapshot(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f; size_t diameter = 10;
-  deserialize_snapshot(packet, eid, x, y, diameter);
+  float x = 0.f; float y = 0.f; size_t diameter = 10; size_t score = 0;
+  deserialize_snapshot(packet, eid, x, y, diameter, score);
   // TODO: Direct adressing, of course!
   for (Entity &e : entities)
     if (e.eid == eid)
@@ -39,6 +42,7 @@ void on_snapshot(ENetPacket *packet)
       e.x = x;
       e.y = y;
       e.sizeOfRect = diameter;
+      e.score = score;
     }
 }
 
@@ -139,7 +143,7 @@ int main(int argc, const char **argv)
           e.y += ((up ? -dt : 0.f) + (down ? +dt : 0.f)) * 100.f;
 
           // Send
-          send_entity_state(serverPeer, my_entity, e.x, e.y, e.sizeOfRect);
+          send_entity_state(serverPeer, my_entity, e.x, e.y, e.sizeOfRect, e.score);
         }
     }
 
@@ -147,10 +151,12 @@ int main(int argc, const char **argv)
     BeginDrawing();
       ClearBackground(Color{33, 33, 33, 255});
       BeginMode2D(camera);
-        for (const Entity &e : entities)
+        for (int i = 0; i < entities.size(); ++i)
         {
+          const Entity& e = entities[i];
           const Rectangle rect = {e.x, e.y, (float)e.sizeOfRect, (float)e.sizeOfRect};
           DrawRectangleRec(rect, GetColor(e.color));
+          DrawText(TextFormat("%u\t%u", e.eid, e.score), -360, -100 + 20 * i, 20, (e.eid != my_entity) ? WHITE : BLUE);
         }
 
       EndMode2D();
