@@ -185,10 +185,10 @@ int main(int argc, const char **argv)
           eater.sizeOfRect += (eaten.sizeOfRect / 2);
           eater.score += (eaten.sizeOfRect / 2);
 
-          if (eater.sizeOfRect >= 500)
-          {
-            eater.sizeOfRect = 500;
-          }
+          //if (eater.sizeOfRect >= 500)
+          //{
+          //  eater.sizeOfRect = 500;
+          //}
 
           eaten.x = (rand() % 40 - 20) * 15.f;
           eaten.y = (rand() % 40 - 20) * 15.f;
