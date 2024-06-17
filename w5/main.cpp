@@ -6,22 +6,33 @@
 #include <math.h>
 
 #include <vector>
+#include <map>
+#include <deque>
 #include "entity.h"
 #include "protocol.h"
 
 
 static std::vector<Entity> entities;
+static std::map<uint32_t, std::deque<Entity>> history_of_entities;
 static uint16_t my_entity = invalid_entity;
+const uint32_t fixedDt = 20;
 
 void on_new_entity_packet(ENetPacket *packet)
 {
-  Entity newEntity;
+  Entity newEntity; uint32_t timestamp = 0;
   deserialize_new_entity(packet, newEntity);
   // TODO: Direct adressing, of course!
+  if (history_of_entities.find(newEntity.eid) != history_of_entities.end())
+  {
+    return; // don't need to do anything, we already have entity
+  }
   for (const Entity &e : entities)
     if (e.eid == newEntity.eid)
       return; // don't need to do anything, we already have entity
+  //newEntity.timestamp *= fixedDt;
   entities.push_back(newEntity);
+  newEntity.timestamp /= fixedDt;
+  history_of_entities[newEntity.eid] = std::deque<Entity>(1, newEntity);
 }
 
 void on_set_controlled_entity(ENetPacket *packet)
@@ -32,16 +43,78 @@ void on_set_controlled_entity(ENetPacket *packet)
 void on_snapshot(ENetPacket *packet)
 {
   uint16_t eid = invalid_entity;
-  float x = 0.f; float y = 0.f; float ori = 0.f;
-  deserialize_snapshot(packet, eid, x, y, ori);
+  float x = 0.f; float y = 0.f; float ori = 0.f; uint32_t timestamp = 0;
+  deserialize_snapshot(packet, eid, x, y, ori, timestamp);
   // TODO: Direct adressing, of course!
-  for (Entity &e : entities)
-    if (e.eid == eid)
+  //for (Entity &e : entities)
+  //  if (e.eid == eid)
+  //  {
+  //    e.x = x;
+  //    e.y = y;
+  //    e.ori = ori;
+  //  }
+  
+  auto dequeForEntity = history_of_entities.find(eid);
+  if (dequeForEntity != history_of_entities.end())
+  {
+    Entity& newestEntity = dequeForEntity->second.back();
+    if (timestamp / fixedDt > newestEntity.timestamp)
+      dequeForEntity->second.emplace_back(newestEntity.color, x, y, newestEntity.speed, ori,
+        newestEntity.thr, newestEntity.steer, eid, timestamp / fixedDt);
+  }
+}
+//uint32_t lastPrint = 0;
+void updateEntity(Entity& e)
+{
+  auto dequeForEntity = history_of_entities.find(e.eid);
+  if (dequeForEntity == history_of_entities.end())
+  {
+    return;
+  }
+  if (dequeForEntity->second.size() == 0)
+  {
+    return;
+  }
+
+  /*{
+    Entity& entity_to_copy = dequeForEntity->second.back();
+    e.ori = entity_to_copy.ori;
+    e.x = entity_to_copy.x;
+    e.y = entity_to_copy.y;
+    dequeForEntity->second.erase(dequeForEntity->second.begin(), dequeForEntity->second.begin() + dequeForEntity->second.size() - 1);
+    return;
+  }*/
+
+  uint32_t curTimestamp = enet_time_get() - 400;//if (lastPrint + 200 < curTimestamp){
+  //printf("%u\n", curTimestamp);lastPrint=curTimestamp;}
+  uint32_t curTick = curTimestamp / fixedDt;
+  for (int i = 0; i < dequeForEntity->second.size(); ++i)
+  {
+    if (dequeForEntity->second[i].timestamp > curTick)
     {
-      e.x = x;
-      e.y = y;
-      e.ori = ori;
+      // update (interpolate) and clean extra ones
+      float scaler = 1.0f * (curTimestamp - e.timestamp) / \
+          (dequeForEntity->second[i].timestamp * fixedDt - e.timestamp);
+      e.ori = dequeForEntity->second[i].ori * scaler + e.ori * (1 - scaler);
+      e.x = dequeForEntity->second[i].x * scaler + e.x * (1 - scaler);
+      e.y = dequeForEntity->second[i].y * scaler + e.y * (1 - scaler);
+      e.timestamp = curTimestamp;
+
+      if (i != 0)
+        dequeForEntity->second.erase(dequeForEntity->second.begin(), dequeForEntity->second.begin() + i);
+      return;
     }
+  }
+
+  //need to copy first one and say about this situation
+  //printf("Don\'t have information about future\n");
+  //Entity& entity_to_copy = dequeForEntity->second.back();
+  //e.ori = entity_to_copy.ori;
+  //e.x = entity_to_copy.x;
+  //e.y = entity_to_copy.y;
+  //e.timestamp = curTimestamp;
+  simulate_entity(e, GetFrameTime());
+  return;
 }
 
 int main(int argc, const char **argv)
@@ -110,6 +183,14 @@ int main(int argc, const char **argv)
       case ENET_EVENT_TYPE_RECEIVE:
         switch (get_packet_type(event.packet))
         {
+        case E_SERVER_TO_CLIENT_SET_TIME:
+          {
+          uint32_t timeToSet = 0;
+          deserialize_time(event.packet, timeToSet);
+          enet_time_set(timeToSet + event.peer->roundTripTime / 2);//lastPrint = timeToSet;
+          //printf("\n\t\tRtt: %u\n\n", (uint32_t)event.peer->roundTripTime);
+          }
+          break;
         case E_SERVER_TO_CLIENT_NEW_ENTITY:
           on_new_entity_packet(event.packet);
           break;
@@ -122,6 +203,7 @@ int main(int argc, const char **argv)
         };
         break;
       default:
+        printf("Strange...\n");
         break;
       };
     }
@@ -133,6 +215,7 @@ int main(int argc, const char **argv)
       bool down = IsKeyDown(KEY_DOWN);
       // TODO: Direct adressing, of course!
       for (Entity &e : entities)
+      {
         if (e.eid == my_entity)
         {
           // Update
@@ -141,13 +224,19 @@ int main(int argc, const char **argv)
 
           // Send
           send_entity_input(serverPeer, my_entity, thr, steer);
+          e.thr = thr;
+          e.steer = steer;
+          //simulate_entity(e, dt);
+          //e.timestamp += dt;
         }
+        updateEntity(e);
+      }
     }
 
     BeginDrawing();
       ClearBackground(GRAY);
       BeginMode2D(camera);
-        for (const Entity &e : entities)
+        for (Entity &e : entities)
         {
           const Rectangle rect = {e.x, e.y, 3.f, 1.f};
           DrawRectanglePro(rect, {0.f, 0.5f}, e.ori * 180.f / PI, GetColor(e.color));
