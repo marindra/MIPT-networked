@@ -11,11 +11,14 @@
 #include "entity.h"
 #include "protocol.h"
 
-
+static uint32_t lastVerifiesTicknum = 0;
+static uint32_t myInd = 0;
+static std::deque<Entity> myOldStates;
 static std::vector<Entity> entities;
-static std::map<uint32_t, std::deque<Entity>> history_of_entities;
+static std::map<uint32_t, std::deque<Entity>> history_of_entities; // it's for future snapshots
 static uint16_t my_entity = invalid_entity;
 const uint32_t fixedDt = 20;
+const float eps = 0.001f;
 
 void on_new_entity_packet(ENetPacket *packet)
 {
@@ -38,6 +41,9 @@ void on_new_entity_packet(ENetPacket *packet)
 void on_set_controlled_entity(ENetPacket *packet)
 {
   deserialize_set_controlled_entity(packet, my_entity);
+  for (int i = 0; i < entities.size(); ++i)
+    if (entities[i].eid == my_entity)
+      myInd = i;
 }
 
 void on_snapshot(ENetPacket *packet)
@@ -57,11 +63,57 @@ void on_snapshot(ENetPacket *packet)
   auto dequeForEntity = history_of_entities.find(eid);
   if (dequeForEntity != history_of_entities.end())
   {
+    uint32_t recievedTickNum = timestamp / fixedDt;
     Entity& newestEntity = dequeForEntity->second.back();
-    if (timestamp / fixedDt > newestEntity.timestamp)
+    if (recievedTickNum > newestEntity.timestamp)
     {
       dequeForEntity->second.emplace_back(newestEntity.color, x, y, newestEntity.speed, ori,
         newestEntity.thr, newestEntity.steer, eid, timestamp / fixedDt);
+    } else {
+      // need to check my state
+      if (recievedTickNum < lastVerifiesTicknum || eid != my_entity || myOldStates.size() == 0)
+      {
+        return;
+      }
+
+      int32_t shift = recievedTickNum - (myOldStates.front().timestamp / fixedDt);
+      if (shift < 0 || shift >= myOldStates.size())
+      {
+        // I can't do something - it's too old. I can't save so big history
+        // the second condition - just for safety
+        return;
+      }
+
+      lastVerifiesTicknum = recievedTickNum;
+      Entity& myStateAtThisMoment = myOldStates[shift];
+      if (fabs(x - myStateAtThisMoment.x) <= eps && fabs(y - myStateAtThisMoment.y) <= eps && fabs(ori - myStateAtThisMoment.ori) <= eps)
+      {
+        // It's verified state now
+        myOldStates.erase(myOldStates.begin(), myOldStates.begin() + std::min((int) myOldStates.size() - 1, shift));
+        return;
+      }
+
+      // Here I must to regenerate information about my entity
+      myStateAtThisMoment.x = x;
+      myStateAtThisMoment.y = y;
+      myStateAtThisMoment.ori = ori;
+
+      // start to create new ones
+      Entity tmpEnt = myOldStates[shift];
+      for (int i = shift + 1; i < myOldStates.size(); ++i)
+      {
+        tmpEnt.thr = myOldStates[i].thr;
+        tmpEnt.steer = myOldStates[i].steer;
+        simulate_entity(tmpEnt, 0.001f * fixedDt);
+        myOldStates[i].x = tmpEnt.x;
+        myOldStates[i].y = tmpEnt.y;
+        myOldStates[i].ori = tmpEnt.ori;
+      }
+
+      // And apply changes to current position:
+      entities[myInd].x = tmpEnt.x;
+      entities[myInd].y = tmpEnt.y;
+      entities[myInd].ori = tmpEnt.ori;
     }
   }
 }
@@ -218,7 +270,6 @@ int main(int argc, const char **argv)
       bool down = IsKeyDown(KEY_DOWN);
       if (enet_time_get() - lastInputSend >= fixedDt)
       {
-        // TODO: Direct adressing, of course!
         for (Entity &e : entities)
         {
           if (e.eid == my_entity)
@@ -235,7 +286,16 @@ int main(int argc, const char **argv)
             //e.timestamp += dt;
           }
           updateEntity(e);
-          lastInputSend=enet_time_get();
+          if (e.eid == my_entity)
+          {
+            myOldStates.push_back(e);
+            if (myOldStates.size() >= 200)
+            {
+              myOldStates.erase(myOldStates.begin(), myOldStates.begin() + 100);
+            }
+          }
+
+          lastInputSend = enet_time_get();
         }
       }
     }
