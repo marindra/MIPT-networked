@@ -59,8 +59,10 @@ void on_snapshot(ENetPacket *packet)
   {
     Entity& newestEntity = dequeForEntity->second.back();
     if (timestamp / fixedDt > newestEntity.timestamp)
+    {
       dequeForEntity->second.emplace_back(newestEntity.color, x, y, newestEntity.speed, ori,
         newestEntity.thr, newestEntity.steer, eid, timestamp / fixedDt);
+    }
   }
 }
 //uint32_t lastPrint = 0;
@@ -113,7 +115,7 @@ void updateEntity(Entity& e)
   //e.x = entity_to_copy.x;
   //e.y = entity_to_copy.y;
   //e.timestamp = curTimestamp;
-  simulate_entity(e, GetFrameTime());
+  simulate_entity(e, 0.001f * fixedDt);
   return;
 }
 
@@ -167,6 +169,7 @@ int main(int argc, const char **argv)
   SetTargetFPS(60);               // Set our game to run at 60 frames-per-second
 
   bool connected = false;
+  uint32_t lastInputSend = 0;
   while (!WindowShouldClose())
   {
     float dt = GetFrameTime();
@@ -213,23 +216,27 @@ int main(int argc, const char **argv)
       bool right = IsKeyDown(KEY_RIGHT);
       bool up = IsKeyDown(KEY_UP);
       bool down = IsKeyDown(KEY_DOWN);
-      // TODO: Direct adressing, of course!
-      for (Entity &e : entities)
+      if (enet_time_get() - lastInputSend >= fixedDt)
       {
-        if (e.eid == my_entity)
+        // TODO: Direct adressing, of course!
+        for (Entity &e : entities)
         {
-          // Update
-          float thr = (up ? 1.f : 0.f) + (down ? -1.f : 0.f);
-          float steer = (left ? -1.f : 0.f) + (right ? 1.f : 0.f);
+          if (e.eid == my_entity)
+          {
+            // Update
+            float thr = (up ? 1.f : 0.f) + (down ? -1.f : 0.f);
+            float steer = (left ? -1.f : 0.f) + (right ? 1.f : 0.f);
 
-          // Send
-          send_entity_input(serverPeer, my_entity, thr, steer);
-          e.thr = thr;
-          e.steer = steer;
-          //simulate_entity(e, dt);
-          //e.timestamp += dt;
+            // Send
+            send_entity_input(serverPeer, my_entity, thr, steer);
+            e.thr = thr;
+            e.steer = steer;
+           //simulate_entity(e, dt);
+            //e.timestamp += dt;
+          }
+          updateEntity(e);
+          lastInputSend=enet_time_get();
         }
-        updateEntity(e);
       }
     }
 

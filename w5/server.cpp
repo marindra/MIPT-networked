@@ -79,6 +79,8 @@ int main(int argc, const char **argv)
   }
 
   uint32_t lastTime = enet_time_get();
+  uint32_t lastSendTime = lastTime;
+  const uint32_t fixedDt = 20; // be careful! I have similar const variable in main.cpp!
   while (true)
   {
     uint32_t curTime = enet_time_get();
@@ -109,17 +111,21 @@ int main(int argc, const char **argv)
       };
     }
     static int t = 0;
-    for (Entity &e : entities)
+    if (enet_time_get() - lastSendTime >= fixedDt)
     {
-      // simulate
-      simulate_entity(e, dt);
-      // send
-      for (size_t i = 0; i < server->peerCount; ++i)
+      lastSendTime = enet_time_get();
+      for (Entity &e : entities)
       {
-        ENetPeer *peer = &server->peers[i];
-        // skip this here in this implementation
-        //if (controlledMap[e.eid] != peer)
-        send_snapshot(peer, e.eid, e.x, e.y, e.ori, enet_time_get());
+        // simulate
+        simulate_entity(e, 0.001f * fixedDt);
+        // send
+        for (size_t i = 0; i < server->peerCount; ++i)
+        {
+          ENetPeer *peer = &server->peers[i];
+          // skip this here in this implementation
+          //if (controlledMap[e.eid] != peer)
+          send_snapshot(peer, e.eid, e.x, e.y, e.ori, enet_time_get());
+        }
       }
     }
     //Sleep(200);
